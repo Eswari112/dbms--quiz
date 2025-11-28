@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>DBMS Quiz</title>
+<style>
+body { font-family: Arial; }
+#quizForm, #thankYouBox { display: none; }
+.warning { color: red; font-weight: bold; display: none; }
+.timer { font-size: 20px; color: blue; font-weight: bold; }
+.question { margin-bottom: 20px; }
+</style>
+</head>
+
+<body oncontextmenu="return false;">
+
+<h2>DBMS Quiz</h2>
+<p id="warning" class="warning">⚠ Cheating detected! Auto-submitting...</p>
+
+<!-- LOGIN BOX -->
+<div id="loginBox">
+    <h3>Login to Start Quiz</h3>
+    <label>Name:</label><br>
+    <input type="text" id="name"><br><br>
+
+    <label>Register Number:</label><br>
+    <input type="text" id="regno"><br><br>
+
+    <button onclick="startQuiz()">Start Quiz</button>
+</div>
+
+<!-- QUIZ FORM -->
+<div id="timer" class="timer"></div>
+
+<form id="quizForm">
+    <div id="quizContainer"></div>
+    <button type="submit">Submit Quiz</button>
+</form>
+
+<!-- THANK YOU PAGE -->
+<div id="thankYouBox">
+    <h2>Thank you for completing the quiz!</h2>
+    <h3 id="finalScoreText"></h3>
+</div>
+
+<script>
+
+let userName = "";
+let userRegNo = "";
+let violated = false;
+let startTime = 0;
+let countdown;
+let correctAnswers = {
+    q1: "A system to manage databases",
+    q2: "A query language",
+    q3: "A query language",
+    q4: "Organizing data"
+};
+
+// QUESTIONS
+const questions = [
+    { q: "What is DBMS?", name: "q1" },
+    { q: "What is mySQL?", name: "q2" },
+    { q: "What is SQL?", name: "q3" },
+    { q: "What is Normalization?", name: "q4" }
+];
+
+// SHUFFLE
+function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
+
+// LOAD QUESTIONS
+function loadQuestions() {
+    const container = document.getElementById("quizContainer");
+    const shuffled = shuffle([...questions]);
+
+    shuffled.forEach((item, i) => {
+        container.innerHTML += `
+            <div class="question">
+                <label>${i + 1}. ${item.q}</label><br>
+                <input type="text" name="${item.name}" required>
+            </div>
+        `;
+    });
+}
+
+// START QUIZ
+function startQuiz() {
+    let name = document.getElementById("name").value.trim();
+    let reg = document.getElementById("regno").value.trim();
+
+    if (!name || !reg) {
+        alert("Enter Name & Register No");
+        return;
+    }
+
+    userName = name;
+    userRegNo = reg;
+
+    document.getElementById("loginBox").style.display = "none";
+    document.getElementById("quizForm").style.display = "block";
+
+    loadQuestions();
+
+    startTime = Date.now();
+    startTimer();
+}
+
+// TIMER – 30 MINUTES
+function startTimer() {
+    let timeLeft = 1800; // 30 mins
+
+    countdown = setInterval(() => {
+        let min = Math.floor(timeLeft / 60);
+        let sec = timeLeft % 60;
+
+        document.getElementById("timer").innerHTML =
+            `Time Left: ${min} : ${sec < 10 ? "0" + sec : sec}`;
+
+        if (timeLeft <= 0) {
+            clearInterval(countdown);
+            autoSubmit("Time Up");
+        }
+        timeLeft--;
+    }, 1000);
+}
+
+// ------- FUZZY MATCH HELPER FUNCTION ---------
+function similarity(str1, str2) {
+    str1 = str1.toLowerCase().trim();
+    str2 = str2.toLowerCase().trim();
+
+    let longer = str1.length > str2.length ? str1 : str2;
+    let shorter = str1.length > str2.length ? str2 : str1;
+
+    let longerLength = longer.length;
+    if (longerLength === 0) return 1.0;
+
+    return (longerLength - editDistance(longer, shorter)) / parseFloat(longerLength);
+}
+
+// Levenshtein Distance
+function editDistance(a, b) {
+    a = a.toLowerCase();
+    b = b.toLowerCase();
+
+    const matrix = [];
+
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] =
+                    Math.min(
+                        matrix[i - 1][j - 1] + 1,
+                        matrix[i][j - 1] + 1,
+                        matrix[i - 1][j] + 1
+                    );
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+// --------- FUZZY SCORE CALCULATION -----------
+function calculateScore() {
+    let score = 0;
+
+    for (let key in correctAnswers) {
+        let userAns = document.querySelector(`[name="${key}"]`).value.trim();
+        let correctAns = correctAnswers[key];
+
+        let sim = similarity(userAns, correctAns);
+
+        if (sim >= 0.8) {
+            score += 1;  // full mark
+        } 
+        else if (sim >= 0.5) {
+            score += 0.5; // half mark
+        }
+    }
+    return score;
+}
+
+// GOOGLE SHEET SUBMIT FUNCTION
+function submitToGoogleSheet(name, regno, score, time, status) {
+    fetch("https://script.google.com/macros/s/AKfycbzt3YIGeVyo6t3TEweMOPtelkhLt8IfdO9MnAfJv-sepkqQ306DvY_qOKzeIGEl3-PK/exec", {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, regno, score, time, status })
+    });
+}
+
+// FORM SUBMIT (NORMAL SUBMIT)
+document.getElementById("quizForm").addEventListener("submit", function(e) {
+    e.preventDefault();
+    finishQuiz("Submitted");
+});
+
+// AUTO SUBMIT FUNCTION
+function autoSubmit(type) {
+    finishQuiz(type);
+}
+
+// MAIN FINISH FUNCTION
+function finishQuiz(status) {
+    clearInterval(countdown);
+
+    document.getElementById("quizForm").style.display = "none";
+
+    const timeTaken = Math.floor((Date.now() - startTime) / 1000);
+    const score = calculateScore();
+
+    // SEND TO GOOGLE SHEET
+    submitToGoogleSheet(userName, userRegNo, score, timeTaken, status);
+
+    // SHOW THANK YOU PAGE
+    document.getElementById("thankYouBox").style.display = "block";
+    document.getElementById("finalScoreText").innerHTML =
+        `Your Score: ${score} / 4`;
+}
+
+// ANTI CHEAT
+document.addEventListener("visibilitychange", function () {
+    if (document.hidden && !violated) {
+        violated = true;
+        document.getElementById("warning").style.display = "block";
+        alert("Cheating detected! Auto submitted.");
+
+        autoSubmit("Cheating");
+    }
+});
+
+</script>
+</body>
+</html>
